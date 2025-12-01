@@ -1,9 +1,11 @@
 package com.silasnovaes.indica.simulation;
 
+import com.silasnovaes.indica.controller.*;
 import com.silasnovaes.indica.domain.*;
 import com.silasnovaes.indica.domain.enums.*;
 import com.silasnovaes.indica.repository.interfaces.UsuarioRepository;
-import com.silasnovaes.indica.service.interfaces.*;
+import com.silasnovaes.indica.service.interfaces.AdminService; // Apenas para inicialização de dados se necessário
+import com.silasnovaes.indica.service.interfaces.VendedorService; // Apenas para inicialização de dados
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
@@ -16,12 +18,17 @@ import java.util.Scanner;
 @Component
 public class SimulacaoRunner implements CommandLineRunner {
 
-    @Autowired private VendedorService vendedorService;
-    @Autowired private AdminService adminService;
-    @Autowired private IndicanteService indicanteService;
-    @Autowired private UsuarioRepository usuarioRepository;
-    @Autowired private CalculoComissaoService calculoComissaoService;
-    @Autowired private GamificacaoService gamificacaoService;
+    // --- AGORA USAMOS CONTROLLERS, NÃO SERVICES ---
+    @Autowired private AuthController authController;
+    @Autowired private AdminController adminController;
+    @Autowired private VendedorController vendedorController;
+    @Autowired private IndicanteController indicanteController;
+
+    // Mantendo estes serviços apenas para o método 'inicializarDadosIniciais' (Setup)
+    // Num cenário real, o setup também seria via controller ou um DataSeeder separado
+    @Autowired private VendedorService vendedorServiceSetup;
+    @Autowired private AdminService adminServiceSetup;
+    @Autowired private UsuarioRepository usuarioRepositorySetup;
 
     private Scanner scanner = new Scanner(System.in);
     private Usuario usuarioLogado = null;
@@ -39,15 +46,16 @@ public class SimulacaoRunner implements CommandLineRunner {
         }
     }
 
-    // --- 1. LOGIN (COM LISTAGEM AUTOMÁTICA) ---
+    // --- 1. LOGIN (VIA AUTH CONTROLLER) ---
     private void menuLogin() {
         System.out.println("\n==========================================");
         System.out.println("          SISTEMA INDICA - LOGIN          ");
         System.out.println("==========================================");
 
-        // --- NOVA FUNCIONALIDADE: LISTAR USUÁRIOS ---
         System.out.println("\n🔎 USUÁRIOS DISPONÍVEIS PARA LOGIN:");
-        List<Usuario> usuarios = usuarioRepository.findAll();
+        // Chamada ao Controller
+        List<Usuario> usuarios = authController.listarTodosParaLogin();
+
         if (usuarios.isEmpty()) {
             System.out.println("   (Nenhum usuário cadastrado)");
         } else {
@@ -61,7 +69,7 @@ public class SimulacaoRunner implements CommandLineRunner {
 
         System.out.println("1 - Fazer Login");
         System.out.println("2 - Cadastrar Novo Vendedor");
-        System.out.println("0 - 🛑 ENCERRAR SISTEMA"); // Opção explícita de parar
+        System.out.println("0 - 🛑 ENCERRAR SISTEMA");
         System.out.print("Escolha uma opção: ");
 
         String op = scanner.nextLine();
@@ -70,7 +78,9 @@ public class SimulacaoRunner implements CommandLineRunner {
             System.out.print("Digite o ID do Usuário acima: ");
             try {
                 Long id = Long.parseLong(scanner.nextLine());
-                Usuario u = usuarioRepository.findById(id).orElse(null);
+                // Chamada ao Controller
+                Usuario u = authController.buscarUsuarioPorId(id);
+
                 if (u != null) {
                     if (!u.isAtivo()) System.out.println("\n⛔ ERRO: Usuário bloqueado ou aguardando aprovação do Admin.");
                     else usuarioLogado = u;
@@ -80,12 +90,13 @@ public class SimulacaoRunner implements CommandLineRunner {
         } else if (op.equals("2")) {
             System.out.print("Nome: "); String n = scanner.nextLine();
             System.out.print("Email: "); String e = scanner.nextLine();
-            Vendedor v = vendedorService.cadastrarVendedor(n, e, "123");
+            // Chamada ao Controller
+            Vendedor v = vendedorController.autoCadastro(n, e, "123");
             System.out.println("\n✅ SUCESSO! ID: " + v.getId() + ". Peça ao Admin para aprovar.");
 
         } else if (op.equals("0")) {
             System.out.println("Encerrando sistema... Até logo!");
-            System.exit(0); // Mata o programa
+            System.exit(0);
         }
     }
 
@@ -96,7 +107,7 @@ public class SimulacaoRunner implements CommandLineRunner {
         else if (usuarioLogado.getPerfil() == PerfilUsuario.INDICANTE) menuIndicante();
     }
 
-    // --- 2. ADMIN ---
+    // --- 2. ADMIN (VIA ADMIN CONTROLLER) ---
     private void menuAdmin() {
         System.out.println("1 - 📋 Aprovar Vendedores Pendentes");
         System.out.println("2 - 👥 Listar Todos Usuários Detalhado");
@@ -108,7 +119,7 @@ public class SimulacaoRunner implements CommandLineRunner {
 
         try {
             if (op.equals("1")) {
-                List<Vendedor> pendentes = adminService.listarVendedoresPendentes();
+                List<Vendedor> pendentes = adminController.listarVendedoresPendentes();
                 if (pendentes.isEmpty()) System.out.println("\n(Nenhum vendedor pendente)");
                 else {
                     System.out.println("\n--- PENDENTES ---");
@@ -116,27 +127,27 @@ public class SimulacaoRunner implements CommandLineRunner {
                     System.out.print("Digite o ID para aprovar (ou ENTER p/ cancelar): ");
                     String idStr = scanner.nextLine();
                     if (!idStr.isEmpty()) {
-                        adminService.aprovarVendedor(Long.parseLong(idStr));
+                        adminController.aprovarVendedor(Long.parseLong(idStr));
                         System.out.println("✅ Vendedor Aprovado!");
                     }
                 }
             } else if (op.equals("2")) {
                 System.out.println("\n--- TODOS USUÁRIOS ---");
-                for (Usuario u : adminService.listarTodosUsuarios()) {
+                for (Usuario u : adminController.listarTodosUsuarios()) {
                     System.out.println("ID: " + u.getId() + " | " + u.getNome() + " | " + u.getPerfil() + " | Ativo: " + u.isAtivo());
                 }
             } else if (op.equals("3")) {
                 System.out.print("ID para excluir: ");
-                adminService.excluirUsuario(Long.parseLong(scanner.nextLine()));
+                adminController.excluirUsuario(Long.parseLong(scanner.nextLine()));
                 System.out.println("🗑️ Usuário excluído.");
             } else if (op.equals("4")) {
-                gamificacaoService.avaliarNiveisTrimestralmente();
+                adminController.rodarGamificacao();
                 System.out.println("✅ Processo de Gamificação concluído.");
             } else if (op.equals("0")) usuarioLogado = null;
         } catch (Exception e) { System.out.println("❌ Erro: " + e.getMessage()); }
     }
 
-    // --- 3. VENDEDOR ---
+    // --- 3. VENDEDOR (VIA VENDEDOR CONTROLLER) ---
     private void menuVendedor() {
         System.out.println("1 - 📊 CRM (Ver/Mover Indicações)");
         System.out.println("2 - ➕ Cadastrar Cliente Indicante");
@@ -145,7 +156,7 @@ public class SimulacaoRunner implements CommandLineRunner {
         String op = scanner.nextLine();
 
         if (op.equals("1")) {
-            List<Indicacao> lista = vendedorService.listarMinhasIndicacoes(usuarioLogado.getId());
+            List<Indicacao> lista = vendedorController.verMeuCRM(usuarioLogado.getId());
             if (lista.isEmpty()) System.out.println("\n(CRM vazio)");
             else {
                 System.out.println("\n--- MEU CRM ---");
@@ -159,19 +170,19 @@ public class SimulacaoRunner implements CommandLineRunner {
                     String st = scanner.nextLine();
                     StatusIndicacao novoSt = st.equals("2") ? StatusIndicacao.CONTRATOU :
                             st.equals("3") ? StatusIndicacao.NEGADO : StatusIndicacao.EM_NEGOCIACAO;
-                    vendedorService.moverIndicacaoCRM(Long.parseLong(idStr), novoSt);
+                    vendedorController.moverCardCRM(Long.parseLong(idStr), novoSt);
                     System.out.println("✅ Status atualizado!");
                 }
             }
         } else if (op.equals("2")) {
             System.out.print("Nome: "); String n = scanner.nextLine();
             System.out.print("Email: "); String e = scanner.nextLine();
-            ClienteIndicante novo = vendedorService.cadastrarClienteIndicante(usuarioLogado.getId(), n, e, "123", "Pix");
+            ClienteIndicante novo = vendedorController.cadastrarIndicante(usuarioLogado.getId(), n, e, "123", "Pix");
             System.out.println("✅ Indicante criado! ID: " + novo.getId());
         } else if (op.equals("0")) usuarioLogado = null;
     }
 
-    // --- 4. INDICANTE ---
+    // --- 4. INDICANTE (VIA INDICANTE CONTROLLER) ---
     private void menuIndicante() {
         ClienteIndicante me = (ClienteIndicante) usuarioLogado;
         System.out.println("Nível Atual: " + me.getNivel());
@@ -187,11 +198,12 @@ public class SimulacaoRunner implements CommandLineRunner {
             try {
                 double valor = Double.parseDouble(scanner.nextLine());
 
-                Indicacao ind = indicanteService.criarIndicacao(me.getId(), nome, "000");
-                // SIMULAÇÃO: Marca como contratou na hora para gerar cálculo
+                // Chamada ao Controller
+                Indicacao ind = indicanteController.criarIndicacao(me.getId(), nome, "000");
                 ind.setStatus(StatusIndicacao.CONTRATOU);
 
-                List<Comissao> comissoes = calculoComissaoService.calcularEArmazenarComissao(me.getVendedor(), ind, valor, "Amil");
+                // Chamada ao Controller
+                List<Comissao> comissoes = indicanteController.gerarPropostaComissao(me, ind, valor, "Amil");
                 double total = comissoes.stream().mapToDouble(Comissao::getValorComissao).sum();
 
                 System.out.println("\n-----------------------------------------");
@@ -215,7 +227,8 @@ public class SimulacaoRunner implements CommandLineRunner {
                 }
             } catch (Exception e) { System.out.println("❌ Erro: " + e.getMessage()); }
         } else if (op.equals("2")) {
-            Carteira c = indicanteService.verMinhaCarteira(me.getId());
+            // Chamada ao Controller
+            Carteira c = indicanteController.verMinhaCarteira(me.getId());
             System.out.println("\n--- MINHA CARTEIRA ---");
             if (c.getComissoes().isEmpty()) System.out.println("(Vazia)");
 
@@ -231,22 +244,21 @@ public class SimulacaoRunner implements CommandLineRunner {
     }
 
     private void inicializarDadosIniciais() {
-        // Garante que existe pelo menos 1 admin, 1 vendedor e 1 indicante
-        if (usuarioRepository.findAll().isEmpty()) {
+        if (usuarioRepositorySetup.findAll().isEmpty()) {
             Administrador adm = new Administrador("Super Admin", "admin@indica.com", "123");
-            usuarioRepository.save(adm);
+            usuarioRepositorySetup.save(adm);
 
-            Vendedor v = vendedorService.cadastrarVendedor("Silas Vendedor", "vendedor@indica.com", "123");
-            adminService.aprovarVendedor(v.getId());
+            Vendedor v = vendedorServiceSetup.cadastrarVendedor("Silas Vendedor", "vendedor@indica.com", "123");
+            adminServiceSetup.aprovarVendedor(v.getId());
 
             Regulamento reg = new Regulamento(v);
             Map<NivelIndicante, Double> regra = new HashMap<>();
             regra.put(NivelIndicante.BRONZE, 0.30);
             reg.getRegrasComissao().put("Amil", regra);
             reg.getRegrasParcelamento().put("Amil", 2);
-            vendedorService.definirRegulamento(v.getId(), reg);
+            vendedorServiceSetup.definirRegulamento(v.getId(), reg);
 
-            vendedorService.cadastrarClienteIndicante(v.getId(), "João Indicante", "joao@indica.com", "123", "Pix");
+            vendedorServiceSetup.cadastrarClienteIndicante(v.getId(), "João Indicante", "joao@indica.com", "123", "Pix");
         }
     }
 }
